@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>IronPWA - iOS Workout Tracker</title>
+    
+    <!-- iOS Web App Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="IronLog">
+    <meta name="theme-color" content="#000000">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        ios: {
+                            bg: '#000000',
+                            card: '#1c1c1e',
+                            cardLight: '#ffffff',
+                            bgLight: '#f2f2f7',
+                            accent: '#0a84ff',
+                            green: '#30d158',
+                            orange: '#ff9f0a',
+                            red: '#ff453a',
+                            purple: '#bf5af2',
+                            gray: '#8e8e93',
+                            gray2: '#aeaeb2',
+                            gray6: '#1c1c1e',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', 'San Francisco', 'Helvetica Neue', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* iOS-like Smooth Momentum Scrolling & Blur Effects */
+        body {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .ios-blur {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
+        .pt-safe {
+            padding-top: env(safe-area-inset-top, 20px);
+        }
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        input, button, select {
+            user-select: auto;
+            -webkit-user-select: auto;
+        }
+        /* Pulse Animation for Active Rest Timer */
+        @keyframes timerPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+            100% { transform: scale(1); }
+        }
+        .timer-active {
+            animation: timerPulse 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-black text-white font-sans h-full flex flex-col antialiased selection:bg-ios-accent selection:text-white">
+
+    <!-- Top App Bar / Status Spacer -->
+    <header class="pt-safe bg-black/80 ios-blur sticky top-0 z-30 border-b border-white/10 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold text-lg shadow-lg">
+                🏋️
+            </div>
+            <div>
+                <h1 class="text-base font-bold leading-none tracking-tight">IronLog</h1>
+                <p class="text-[11px] text-ios-gray font-medium" id="header-subtitle">Upper/Lower Split</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <!-- Units Toggle Button -->
+            <button id="unit-toggle-btn" onclick="toggleUnits()" class="px-2.5 py-1 rounded-full bg-white/10 text-xs font-semibold hover:bg-white/20 transition-all active:scale-95 text-ios-accent">
+                LBS
+            </button>
+            <!-- Add to Home Screen Button -->
+            <button onclick="openPwaModal()" class="p-1.5 rounded-full bg-white/10 text-ios-accent hover:bg-white/20 transition-all active:scale-95" title="Install App">
+                <i data-lucide="share" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Dynamic Content Canvas -->
+    <main class="flex-1 overflow-y-auto px-4 pt-4 pb-28 max-w-2xl mx-auto w-full" id="app-viewport">
+        <!-- Viewport rendered via JS based on Active Tab -->
+    </main>
+
+    <!-- Global Rest Timer Floating Widget -->
+    <div id="floating-timer-widget" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 hidden w-[92%] max-w-md bg-ios-card/95 border border-white/15 rounded-2xl p-3 shadow-2xl ios-blur flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-full bg-ios-accent/20 flex items-center justify-center text-ios-accent font-bold">
+                <i data-lucide="timer" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <div class="text-xs text-ios-gray font-semibold uppercase tracking-wider">Rest Timer</div>
+                <div class="text-xl font-mono font-bold tracking-tight text-white" id="timer-display">01:30</div>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="adjustTimer(-15)" class="p-2 rounded-xl bg-white/10 text-xs font-bold active:scale-95">-15s</button>
+            <button onclick="adjustTimer(15)" class="p-2 rounded-xl bg-white/10 text-xs font-bold active:scale-95">+15s</button>
+            <button onclick="stopRestTimer()" class="p-2 rounded-xl bg-ios-red/20 text-ios-red font-bold active:scale-95">
+                <i data-lucide="square" class="w-4 h-4 fill-current"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Bottom iOS Tab Navigation Bar -->
+    <nav class="fixed bottom-0 left-0 right-0 z-30 bg-black/85 ios-blur border-t border-white/10 pb-safe">
+        <div class="max-w-md mx-auto flex justify-around items-center h-14 px-2">
+            <button onclick="switchTab('workout')" id="tab-btn-workout" class="tab-btn flex flex-col items-center justify-center w-full py-1 text-ios-accent transition-colors">
+                <i data-lucide="dumbbell" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium mt-0.5">Workout</span>
+            </button>
+            <button onclick="switchTab('templates')" id="tab-btn-templates" class="tab-btn flex flex-col items-center justify-center w-full py-1 text-ios-gray hover:text-white transition-colors">
+                <i data-lucide="layout-list" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium mt-0.5">Split Plan</span>
+            </button>
+            <button onclick="switchTab('analytics')" id="tab-btn-analytics" class="tab-btn flex flex-col items-center justify-center w-full py-1 text-ios-gray hover:text-white transition-colors">
+                <i data-lucide="line-chart" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium mt-0.5">Progress</span>
+            </button>
+
+            <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-btn flex flex-col items-center justify-center w-full py-1 text-ios-gray hover:text-white transition-colors">
+                <i data-lucide="settings" class="w-5 h-5"></i>
+                <span class="text-[10px] font-medium mt-0.5">Settings</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- PWA iOS Installation Modal -->
+    <div id="pwa-modal" class="fixed inset-0 z-50 hidden bg-black/80 ios-blur flex items-end sm:items-center justify-center p-4">
+        <div class="bg-ios-card border border-white/15 rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom duration-200">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center mx-auto text-3xl shadow-lg">
+                📲
+            </div>
+            <div>
+                <h3 class="text-xl font-bold">Install as iOS App</h3>
+                <p class="text-xs text-ios-gray mt-1 leading-relaxed">
+                    Enjoy fullscreen, offline tracking, and native iOS feel without needing the App Store.
+                </p>
+            </div>
+            
+            <div class="bg-black/40 rounded-2xl p-4 text-left space-y-3 border border-white/5 text-xs">
+                <div class="flex items-center space-x-3">
+                    <div class="w-6 h-6 rounded-full bg-ios-accent/20 text-ios-accent flex items-center justify-center font-bold">1</div>
+                    <p class="text-gray-300">Tap the <span class="font-bold text-white"><i data-lucide="share" class="inline w-3.5 h-3.5 text-ios-accent"></i> Share</span> button in Safari's toolbar.</p>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="w-6 h-6 rounded-full bg-ios-accent/20 text-ios-accent flex items-center justify-center font-bold">2</div>
+                    <p class="text-gray-300">Scroll down and select <span class="font-bold text-white">"Add to Home Screen"</span>.</p>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="w-6 h-6 rounded-full bg-ios-accent/20 text-ios-accent flex items-center justify-center font-bold">3</div>
+                    <p class="text-gray-300">Tap <span class="font-bold text-ios-accent">Add</span> in the top right corner.</p>
+                </div>
+            </div>
+
+            <button onclick="closePwaModal()" class="w-full py-3 rounded-2xl bg-ios-accent text-white font-semibold text-sm active:opacity-80 transition-all">
+                Got It
+            </button>
+        </div>
+    </div>
+
+    <!-- Application JavaScript Code -->
+    <script>
+        // Default 4-Day Upper/Lower Split Presets
+        const DEFAULT_ROUTINES = [
+            {
+                id: 'upper-a',
+                name: 'Upper Body A',
+                subtitle: 'Push & Heavy Bench Focus',
+                exercises: [
+                    { name: 'Barbell Bench Press', sets: 4, targetRepsMin: 4, targetRepsMax: 6, targetRpe: '8-9', isMainLift: true },
+                    { name: 'Barbell Row', sets: 4, targetRepsMin: 6, targetRepsMax: 8, targetRpe: '8' },
+                    { name: 'Incline DB Press', sets: 3, targetRepsMin: 8, targetRepsMax: 10, targetRpe: '8-9' },
+                    { name: 'Lat Pulldown / Pull-ups', sets: 3, targetRepsMin: 8, targetRepsMax: 10, targetRpe: '8' },
+                    { name: 'Overhead Triceps Extension', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '9' },
+                    { name: 'Face Pulls', sets: 3, targetRepsMin: 15, targetRepsMax: 20, targetRpe: '9' }
+                ]
+            },
+            {
+                id: 'lower-a',
+                name: 'Lower Body A',
+                subtitle: 'Squat & Anterior Chain Focus',
+                exercises: [
+                    { name: 'Barbell Back Squat', sets: 4, targetRepsMin: 5, targetRepsMax: 6, targetRpe: '8-9', isMainLift: true },
+                    { name: 'Romanian Deadlift (RDL)', sets: 3, targetRepsMin: 8, targetRepsMax: 10, targetRpe: '8' },
+                    { name: 'Walking Lunges', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '8-9' },
+                    { name: 'Leg Press / Extension', sets: 3, targetRepsMin: 12, targetRepsMax: 15, targetRpe: '9' },
+                    { name: 'Standing Calf Raises', sets: 4, targetRepsMin: 12, targetRepsMax: 15, targetRpe: '9' },
+                    { name: 'Hanging Leg Raises', sets: 3, targetRepsMin: 12, targetRepsMax: 15, targetRpe: '9' }
+                ]
+            },
+            {
+                id: 'upper-b',
+                name: 'Upper Body B',
+                subtitle: 'Pull & Hypertrophy Focus',
+                exercises: [
+                    { name: 'Overhead Press (OHP)', sets: 4, targetRepsMin: 5, targetRepsMax: 6, targetRpe: '8-9', isMainLift: true },
+                    { name: 'Close-Grip Bench Press', sets: 3, targetRepsMin: 6, targetRepsMax: 8, targetRpe: '8-9' },
+                    { name: 'Single-Arm DB Row', sets: 3, targetRepsMin: 8, targetRepsMax: 10, targetRpe: '8' },
+                    { name: 'DB / Cable Chest Flyes', sets: 3, targetRepsMin: 12, targetRepsMax: 15, targetRpe: '9' },
+                    { name: 'Dumbbell Lateral Raises', sets: 4, targetRepsMin: 12, targetRepsMax: 15, targetRpe: '9' },
+                    { name: 'Incline Dumbbell Curls', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '9' }
+                ]
+            },
+            {
+                id: 'lower-b',
+                name: 'Lower Body B',
+                subtitle: 'Deadlift & Posterior Chain Focus',
+                exercises: [
+                    { name: 'Conventional Deadlift', sets: 3, targetRepsMin: 4, targetRepsMax: 5, targetRpe: '8-9', isMainLift: true },
+                    { name: 'Bulgarian Split Squat', sets: 3, targetRepsMin: 8, targetRepsMax: 10, targetRpe: '8-9' },
+                    { name: 'Hamstring Leg Curls', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '9' },
+                    { name: 'Goblet / Hack Squats', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '8-9' },
+                    { name: 'Seated Calf Raises', sets: 3, targetRepsMin: 15, targetRepsMax: 20, targetRpe: '9' },
+                    { name: 'Ab Wheel / Planks', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '9' }
+                ]
+            }
+        ];
+
+        // State Management
+        let appState = {
+            unit: 'lbs', // 'lbs' or 'kg'
+            activeTab: 'workout',
+            routines: [],
+            logs: [], // Recorded workouts history
+            activeSession: null, // Currently active workout log
+            timer: {
+                interval: null,
+                totalSeconds: 0,
+                remainingSeconds: 0,
+                active: false
+            }
+        };
+
+        // Initialize App
+        window.onload = function() {
+            loadFromLocalStorage();
+            renderApp();
+            lucide.createIcons();
+            
+            // Web Audio Context for Timer Alert
+            window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        };
+
+        // Local Storage Helpers
+        function saveToLocalStorage() {
+            localStorage.setItem('ironlog_state', JSON.stringify({
+                unit: appState.unit,
+                routines: appState.routines,
+                logs: appState.logs,
+                activeSession: appState.activeSession
+            }));
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('ironlog_state');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    appState.unit = parsed.unit || 'lbs';
+                    appState.routines = parsed.routines && parsed.routines.length ? parsed.routines : DEFAULT_ROUTINES;
+                    appState.logs = parsed.logs || [];
+                    appState.activeSession = parsed.activeSession || null;
+                } catch(e) {
+                    appState.routines = DEFAULT_ROUTINES;
+                }
+            } else {
+                appState.routines = DEFAULT_ROUTINES;
+            }
+            document.getElementById('unit-toggle-btn').innerText = appState.unit.toUpperCase();
+        }
+
+        function toggleUnits() {
+            appState.unit = appState.unit === 'lbs' ? 'kg' : 'lbs';
+            document.getElementById('unit-toggle-btn').innerText = appState.unit.toUpperCase();
+            saveToLocalStorage();
+            renderApp();
+        }
+
+        function switchTab(tabName) {
+            appState.activeTab = tabName;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('text-ios-accent');
+                btn.classList.add('text-ios-gray');
+            });
+            const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-ios-gray');
+                activeBtn.classList.add('text-ios-accent');
+            }
+            renderApp();
+        }
+
+        // Core Render Dispatcher
+        function renderApp() {
+            const viewport = document.getElementById('app-viewport');
+            viewport.innerHTML = '';
+
+            switch (appState.activeTab) {
+                case 'workout':
+                    renderWorkoutTab(viewport);
+                    break;
+                case 'templates':
+                    renderTemplatesTab(viewport);
+                    break;
+                case 'analytics':
+                    renderAnalyticsTab(viewport);
+                    break;
+                case 'settings':
+                    renderSettingsTab(viewport);
+                    break;
+                default:
+                    renderWorkoutTab(viewport);
+            }
+            lucide.createIcons();
+        }
+
+        // ==========================================
+        // 1. WORKOUT TAB (Active Logger)
+        // ==========================================
+        function renderWorkoutTab(container) {
+            if (!appState.activeSession) {
+                // Selector for Starting a New Session
+                let html = `
+                    <div class="space-y-6">
+                        <div class="bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-blue-500/30 rounded-3xl p-5 shadow-lg">
+                            <span class="text-xs font-bold text-ios-accent uppercase tracking-wider">Ready to Train?</span>
+                            <h2 class="text-2xl font-bold mt-1">Start Workout Session</h2>
+                            <p class="text-xs text-ios-gray mt-1">Select a workout routine from your 4-Day Split below to begin logging.</p>
+                        </div>
+
+                        <div class="space-y-3">
+                            <h3 class="text-sm font-semibold text-ios-gray uppercase tracking-wider px-1">4-Day Split Routines</h3>
+                            <div class="grid grid-cols-1 gap-3">
+                `;
+
+                appState.routines.forEach(routine => {
+                    // Check previous log for last weight
+                    const lastLog = appState.logs.filter(l => l.routineId === routine.id).pop();
+                    const lastDate = lastLog ? new Date(lastLog.date).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : 'Never';
+
+                    html += `
+                        <div onclick="startSession('${routine.id}')" class="bg-ios-card hover:bg-white/10 active:scale-[0.98] transition-all p-4 rounded-2xl border border-white/10 cursor-pointer flex items-center justify-between group">
+                            <div>
+                                <h4 class="font-bold text-base group-hover:text-ios-accent transition-colors">${routine.name}</h4>
+                                <p class="text-xs text-ios-gray">${routine.subtitle || routine.exercises.length + ' exercises'}</p>
+                                <span class="inline-block mt-2 text-[10px] bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-ios-gray">Last: ${lastDate}</span>
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-ios-accent/20 text-ios-accent flex items-center justify-center group-hover:bg-ios-accent group-hover:text-white transition-all">
+                                <i data-lucide="play" class="w-5 h-5 fill-current"></i>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML = html;
+            } else {
+                // Active Workout Session Logging View
+                const session = appState.activeSession;
+                let html = `
+                    <div class="space-y-5">
+                        <!-- Session Header -->
+                        <div class="flex items-center justify-between bg-ios-card p-4 rounded-2xl border border-white/10 sticky top-16 z-20 shadow-md">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-ios-green tracking-wider">● Workout In Progress</span>
+                                <h2 class="text-lg font-bold">${session.routineName}</h2>
+                            </div>
+                            <button onclick="finishSession()" class="px-4 py-2 rounded-xl bg-ios-green text-black font-bold text-xs active:scale-95 transition-all shadow-lg">
+                                Finish Session
+                            </button>
+                        </div>
+
+                        <!-- Exercises Loop -->
+                        <div class="space-y-4">
+                `;
+
+                session.exercises.forEach((ex, exIdx) => {
+                    // Get previous session data for performance reference & overload suggestion
+                    const prevData = getPreviousExerciseLog(ex.name);
+                    const overloadTip = calculateProgressiveOverload(ex, prevData);
+
+                    html += `
+                        <div class="bg-ios-card rounded-2xl p-4 border border-white/10 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h3 class="font-bold text-base text-white flex items-center gap-2">
+                                        ${ex.name}
+                                        ${ex.isMainLift ? '<span class="text-[9px] bg-ios-orange/20 text-ios-orange px-1.5 py-0.5 rounded font-semibold uppercase">Main</span>' : ''}
+                                    </h3>
+                                    <p class="text-xs text-ios-gray">Target: ${ex.targetRepsMin}-${ex.targetRepsMax} reps @ RPE ${ex.targetRpe}</p>
+                                </div>
+                                <button onclick="quickStartTimer(90)" class="text-xs text-ios-accent bg-ios-accent/10 px-2.5 py-1 rounded-full font-semibold hover:bg-ios-accent/20">
+                                    ⏱ 90s
+                                </button>
+                            </div>
+
+                            ${overloadTip ? `
+                                <div class="bg-ios-green/10 border border-ios-green/30 rounded-xl p-2.5 flex items-start space-x-2 text-xs text-ios-green">
+                                    <i data-lucide="trending-up" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                                    <div>
+                                        <span class="font-bold">Overload Suggestion:</span> ${overloadTip}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            <!-- Set Row Table -->
+                            <div class="space-y-2">
+                                <div class="grid grid-cols-12 text-[10px] font-bold text-ios-gray uppercase px-1">
+                                    <span class="col-span-2 text-center">Set</span>
+                                    <span class="col-span-4 text-center">Weight (${appState.unit})</span>
+                                    <span class="col-span-4 text-center">Reps</span>
+                                    <span class="col-span-2 text-center">Done</span>
+                                </div>
+                    `;
+
+                    ex.sets.forEach((set, setIdx) => {
+                        html += `
+                            <div class="grid grid-cols-12 items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
+                                <span class="col-span-2 text-center font-mono font-bold text-xs text-ios-gray">${setIdx + 1}</span>
+                                <div class="col-span-4">
+                                    <input type="number" step="0.5" value="${set.weight}" onchange="updateSetData(${exIdx}, ${setIdx}, 'weight', this.value)" 
+                                        placeholder="${prevData && prevData.sets[setIdx] ? prevData.sets[setIdx].weight : '0'}"
+                                        class="w-full bg-white/10 text-white font-mono font-bold text-center py-1.5 rounded-lg border border-white/10 focus:outline-none focus:border-ios-accent text-sm">
+                                </div>
+                                <div class="col-span-4">
+                                    <input type="number" value="${set.reps}" onchange="updateSetData(${exIdx}, ${setIdx}, 'reps', this.value)" 
+                                        placeholder="${prevData && prevData.sets[setIdx] ? prevData.sets[setIdx].reps : '0'}"
+                                        class="w-full bg-white/10 text-white font-mono font-bold text-center py-1.5 rounded-lg border border-white/10 focus:outline-none focus:border-ios-accent text-sm">
+                                </div>
+                                <div class="col-span-2 flex justify-center">
+                                    <button onclick="toggleSetComplete(${exIdx}, ${setIdx})" class="w-8 h-8 rounded-lg flex items-center justify-center transition-all ${set.completed ? 'bg-ios-green text-black' : 'bg-white/10 text-ios-gray hover:bg-white/20'}">
+                                        <i data-lucide="check" class="w-5 h-5"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                            <div class="flex justify-between pt-1">
+                                <button onclick="addSetToExercise(${exIdx})" class="text-xs text-ios-accent font-semibold flex items-center gap-1 hover:underline">
+                                    <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Add Set
+                                </button>
+                                ${ex.sets.length > 1 ? `
+                                    <button onclick="removeSetFromExercise(${exIdx})" class="text-xs text-ios-red font-semibold flex items-center gap-1 hover:underline">
+                                        <i data-lucide="minus-circle" class="w-3.5 h-3.5"></i> Remove Set
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+
+                        <!-- Cancel Session -->
+                        <div class="pt-4 text-center">
+                            <button onclick="cancelSession()" class="text-xs text-ios-red font-semibold hover:underline">
+                                Cancel & Discard Workout
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML = html;
+            }
+        }
+
+        // Active Workout Logic Functions
+        function startSession(routineId) {
+            const routine = appState.routines.find(r => r.id === routineId);
+            if (!routine) return;
+
+            appState.activeSession = {
+                routineId: routine.id,
+                routineName: routine.name,
+                startTime: new Date().toISOString(),
+                exercises: routine.exercises.map(ex => {
+                    // Try to pre-fill weights from last time
+                    const prevLog = getPreviousExerciseLog(ex.name);
+                    const defaultWeight = prevLog && prevLog.sets[0] ? prevLog.sets[0].weight : '';
+
+                    let initialSets = [];
+                    for (let i = 0; i < ex.sets; i++) {
+                        initialSets.push({
+                            weight: prevLog && prevLog.sets[i] ? prevLog.sets[i].weight : defaultWeight,
+                            reps: '',
+                            completed: false
+                        });
+                    }
+                    return {
+                        name: ex.name,
+                        targetRepsMin: ex.targetRepsMin,
+                        targetRepsMax: ex.targetRepsMax,
+                        targetRpe: ex.targetRpe,
+                        isMainLift: ex.isMainLift || false,
+                        sets: initialSets
+                    };
+                })
+            };
+            saveToLocalStorage();
+            renderApp();
+        }
+
+        function updateSetData(exIdx, setIdx, field, value) {
+            if (!appState.activeSession) return;
+            appState.activeSession.exercises[exIdx].sets[setIdx][field] = value;
+            saveToLocalStorage();
+        }
+
+        function toggleSetComplete(exIdx, setIdx) {
+            if (!appState.activeSession) return;
+            const set = appState.activeSession.exercises[exIdx].sets[setIdx];
+            set.completed = !set.completed;
+            
+            // Auto start timer on completion if enabled
+            if (set.completed) {
+                quickStartTimer(90);
+            }
+            saveToLocalStorage();
+            renderApp();
+        }
+
+        function addSetToExercise(exIdx) {
+            if (!appState.activeSession) return;
+            const ex = appState.activeSession.exercises[exIdx];
+            const lastSet = ex.sets[ex.sets.length - 1];
+            ex.sets.push({
+                weight: lastSet ? lastSet.weight : '',
+                reps: lastSet ? lastSet.reps : '',
+                completed: false
+            });
+            saveToLocalStorage();
+            renderApp();
+        }
+
+        function removeSetFromExercise(exIdx) {
+            if (!appState.activeSession) return;
+            const ex = appState.activeSession.exercises[exIdx];
+            if (ex.sets.length > 1) {
+                ex.sets.pop();
+                saveToLocalStorage();
+                renderApp();
+            }
+        }
+
+        function finishSession() {
+            if (!appState.activeSession) return;
+            
+            // Calculate total session volume
+            let totalVol = 0;
+            appState.activeSession.exercises.forEach(ex => {
+                ex.sets.forEach(s => {
+                    if (s.completed && s.weight && s.reps) {
+                        totalVol += (parseFloat(s.weight) * parseInt(s.reps));
+                    }
+                });
+            });
+
+            const completedLog = {
+                id: 'log_' + Date.now(),
+                routineId: appState.activeSession.routineId,
+                routineName: appState.activeSession.routineName,
+                date: new Date().toISOString(),
+                unit: appState.unit,
+                totalVolume: totalVol,
+                exercises: appState.activeSession.exercises
+            };
+
+            appState.logs.push(completedLog);
+            appState.activeSession = null;
+            saveToLocalStorage();
+            
+            alert('🎉 Workout logged successfully!');
+            switchTab('analytics');
+        }
+
+        function cancelSession() {
+            if (confirm('Are you sure you want to discard this workout?')) {
+                appState.activeSession = null;
+                saveToLocalStorage();
+                renderApp();
+            }
+        }
+
+        // Helpers for Previous Data & Auto Progressive Overload
+        function getPreviousExerciseLog(exerciseName) {
+            for (let i = appState.logs.length - 1; i >= 0; i--) {
+                const log = appState.logs[i];
+                const found = log.exercises.find(e => e.name === exerciseName);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        function calculateProgressiveOverload(currentEx, prevExLog) {
+            if (!prevExLog || !prevExLog.sets || prevExLog.sets.length === 0) return null;
+            
+            // Check if user hit upper rep limit on all sets last time
+            const hitMaxReps = prevExLog.sets.every(s => parseInt(s.reps) >= currentEx.targetRepsMax);
+            if (hitMaxReps) {
+                const inc = appState.unit === 'lbs' ? '2.5 - 5 lbs' : '1 - 2 kg';
+                return `You hit the top rep target (${currentEx.targetRepsMax}) across all sets last time! Increase weight by +${inc} today.`;
+            }
+            return null;
+        }
+
+        // ==========================================
+        // 2. ROUTINES / TEMPLATES TAB
+        // ==========================================
+        function renderTemplatesTab(container) {
+            let html = `
+                <div class="space-y-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-xl font-bold">Split Plan & Routines</h2>
+                            <p class="text-xs text-ios-gray">Customize your workouts or add custom exercises.</p>
+                        </div>
+                        <button onclick="createNewRoutine()" class="p-2 rounded-xl bg-ios-accent/20 text-ios-accent hover:bg-ios-accent/30 font-semibold text-xs flex items-center gap-1">
+                            <i data-lucide="plus" class="w-4 h-4"></i> New Split
+                        </button>
+                    </div>
+
+                    <div class="space-y-4">
+            `;
+
+            appState.routines.forEach((routine, rIdx) => {
+                html += `
+                    <div class="bg-ios-card rounded-2xl border border-white/10 p-4 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="font-bold text-base text-white">${routine.name}</h3>
+                                <p class="text-xs text-ios-gray">${routine.subtitle || 'Custom Split'}</p>
+                            </div>
+                            <span class="text-xs font-mono bg-white/10 px-2 py-1 rounded-lg text-ios-gray">${routine.exercises.length} Exercises</span>
+                        </div>
+
+                        <div class="divide-y divide-white/5 border-t border-b border-white/5 py-1">
+                `;
+
+                routine.exercises.forEach(ex => {
+                    html += `
+                        <div class="py-2 flex items-center justify-between text-xs">
+                            <span class="font-medium text-gray-200">${ex.name}</span>
+                            <span class="text-ios-gray font-mono">${ex.sets} sets × ${ex.targetRepsMin}-${ex.targetRepsMax} reps</span>
+                        </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+
+                        <div class="flex justify-end space-x-2 pt-1">
+                            <button onclick="startSession('${routine.id}')" class="px-3 py-1.5 rounded-xl bg-ios-accent text-white font-bold text-xs">
+                                Start This Workout
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        function createNewRoutine() {
+            const name = prompt('Enter routine name (e.g., Core & Arms Focus):');
+            if (!name) return;
+
+            const newRoutine = {
+                id: 'custom_' + Date.now(),
+                name: name,
+                subtitle: 'Custom User Routine',
+                exercises: [
+                    { name: 'Barbell Bench Press', sets: 3, targetRepsMin: 8, targetRepsMax: 10, targetRpe: '8' },
+                    { name: 'Bicep Dumbbell Curls', sets: 3, targetRepsMin: 10, targetRepsMax: 12, targetRpe: '9' }
+                ]
+            };
+
+            appState.routines.push(newRoutine);
+            saveToLocalStorage();
+            renderApp();
+        }
+
+        // ==========================================
+        // 3. ANALYTICS & PROGRESS TAB
+        // ==========================================
+        function renderAnalyticsTab(container) {
+            let html = `
+                <div class="space-y-6">
+                    <div>
+                        <h2 class="text-xl font-bold">Progress & Analytics</h2>
+                        <p class="text-xs text-ios-gray">Track strength gains and volume overload.</p>
+                    </div>
+
+                    <!-- Lift Progress Chart Card -->
+                    <div class="bg-ios-card rounded-2xl p-4 border border-white/10 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-bold text-sm">Main Lift Progression</h3>
+                            <select id="chart-exercise-select" onchange="updateAnalyticsChart()" class="bg-white/10 text-xs text-white rounded-lg px-2 py-1 border border-white/10 focus:outline-none">
+                                <option value="Barbell Bench Press">Bench Press</option>
+                                <option value="Barbell Back Squat">Back Squat</option>
+                                <option value="Conventional Deadlift">Deadlift</option>
+                                <option value="Overhead Press (OHP)">Overhead Press</option>
+                            </select>
+                        </div>
+                        <div class="h-48 w-full">
+                            <canvas id="progressChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Log History Feed -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-ios-gray uppercase tracking-wider px-1">Workout History Log</h3>
+            `;
+
+            if (appState.logs.length === 0) {
+                html += `
+                    <div class="bg-ios-card p-6 rounded-2xl border border-white/10 text-center text-ios-gray text-xs">
+                        No completed workouts logged yet. Finish a workout to view history here!
+                    </div>
+                `;
+            } else {
+                appState.logs.slice().reverse().forEach(log => {
+                    const dateStr = new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                    html += `
+                        <div class="bg-ios-card rounded-2xl p-4 border border-white/10 space-y-2">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-bold text-sm text-white">${log.routineName}</h4>
+                                    <p class="text-[11px] text-ios-gray">${dateStr}</p>
+                                </div>
+                                <span class="text-xs font-mono bg-ios-accent/10 text-ios-accent px-2 py-1 rounded-lg font-bold">
+                                    Vol: ${log.totalVolume.toLocaleString()} ${log.unit || 'lbs'}
+                                </span>
+                            </div>
+                            <div class="text-xs text-gray-300 border-t border-white/5 pt-2 space-y-1">
+                                ${log.exercises.map(e => `
+                                    <div class="flex justify-between text-[11px]">
+                                        <span class="text-gray-300">${e.name}</span>
+                                        <span class="font-mono text-ios-gray">${e.sets.filter(s=>s.completed).map(s=>`${s.weight}x${s.reps}`).join(', ')}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            html += `
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+
+            // Render Chart.js
+            setTimeout(initAnalyticsChart, 50);
+        }
+
+        let chartInstance = null;
+        function initAnalyticsChart() {
+            const ctx = document.getElementById('progressChart');
+            if (!ctx) return;
+
+            const selectedExercise = document.getElementById('chart-exercise-select').value;
+            
+            // Extract history points
+            const dataPoints = [];
+            const labels = [];
+
+            appState.logs.forEach(log => {
+                const ex = log.exercises.find(e => e.name === selectedExercise);
+                if (ex) {
+                    // Find max weight lifted in that session
+                    const maxWeight = Math.max(...ex.sets.filter(s => s.completed && s.weight).map(s => parseFloat(s.weight)), 0);
+                    if (maxWeight > 0) {
+                        dataPoints.push(maxWeight);
+                        labels.push(new Date(log.date).toLocaleDateString(undefined, {month:'short', day:'numeric'}));
+                    }
+                }
+            });
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.length ? labels : ['No Data'],
+                    datasets: [{
+                        label: `Max Weight (${appState.unit})`,
+                        data: dataPoints.length ? dataPoints : [0],
+                        borderColor: '#0a84ff',
+                        backgroundColor: 'rgba(10, 132, 255, 0.15)',
+                        fill: true,
+                        tension: 0.3,
+                        pointBackgroundColor: '#0a84ff',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#8e8e93', font: { size: 10 } } },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8e8e93', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        function updateAnalyticsChart() {
+            initAnalyticsChart();
+        }
+
+        // ==========================================
+        // 4. SETTINGS & EXPORT TAB
+        // ==========================================
+        function renderSettingsTab(container) {
+            let html = `
+                <div class="space-y-5">
+                    <div>
+                        <h2 class="text-xl font-bold">Settings & Data</h2>
+                        <p class="text-xs text-ios-gray">Manage units, iOS app setup, and backup data.</p>
+                    </div>
+
+                    <div class="bg-ios-card rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+                        <div class="p-4 flex items-center justify-between">
+                            <div>
+                                <h4 class="text-sm font-semibold">Weight Units</h4>
+                                <p class="text-xs text-ios-gray">Switch between Imperial (lbs) and Metric (kg)</p>
+                            </div>
+                            <button onclick="toggleUnits()" class="px-3 py-1 rounded-lg bg-white/10 text-xs font-bold text-ios-accent">
+                                ${appState.unit.toUpperCase()}
+                            </button>
+                        </div>
+
+                        <div onclick="openPwaModal()" class="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5">
+                            <div>
+                                <h4 class="text-sm font-semibold">Add to iOS Home Screen</h4>
+                                <p class="text-xs text-ios-gray">View installation guide for iPhone Safari PWA</p>
+                            </div>
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-ios-gray"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-ios-card rounded-2xl border border-white/10 p-4 space-y-3">
+                        <h4 class="text-sm font-semibold">Export Workout Logs</h4>
+                        <p class="text-xs text-ios-gray">Download all recorded workout data to your device.</p>
+                        <div class="flex space-x-3 pt-1">
+                            <button onclick="exportDataCSV()" class="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                                <i data-lucide="download" class="w-4 h-4"></i> Export CSV
+                            </button>
+                            <button onclick="exportDataJSON()" class="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                                <i data-lucide="file-json" class="w-4 h-4"></i> Export JSON
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-ios-card rounded-2xl border border-ios-red/30 p-4 space-y-2">
+                        <h4 class="text-sm font-semibold text-ios-red">Clear All Local Data</h4>
+                        <p class="text-xs text-ios-gray">Reset routines and clear history permanently.</p>
+                        <button onclick="clearAllData()" class="px-4 py-2 rounded-xl bg-ios-red/20 text-ios-red hover:bg-ios-red/30 text-xs font-bold">
+                            Reset App Data
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // REST TIMER LOGIC
+        // ==========================================
+        function quickStartTimer(seconds) {
+            clearInterval(appState.timer.interval);
+            appState.timer.totalSeconds = seconds;
+            appState.timer.remainingSeconds = seconds;
+            appState.timer.active = true;
+
+            const widget = document.getElementById('floating-timer-widget');
+            widget.classList.remove('hidden');
+            widget.classList.add('timer-active');
+
+            updateTimerDisplay();
+
+            appState.timer.interval = setInterval(() => {
+                appState.timer.remainingSeconds--;
+                updateTimerDisplay();
+
+                if (appState.timer.remainingSeconds <= 0) {
+                    stopRestTimer();
+                    playTimerBeep();
+                    alert('⏱ Rest Timer Finished! Time for your next set.');
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const mins = Math.floor(appState.timer.remainingSeconds / 60);
+            const secs = appState.timer.remainingSeconds % 60;
+            const display = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            document.getElementById('timer-display').innerText = display;
+        }
+
+        function adjustTimer(secs) {
+            appState.timer.remainingSeconds = Math.max(0, appState.timer.remainingSeconds + secs);
+            updateTimerDisplay();
+        }
+
+        function stopRestTimer() {
+            clearInterval(appState.timer.interval);
+            appState.timer.active = false;
+            const widget = document.getElementById('floating-timer-widget');
+            widget.classList.add('hidden');
+            widget.classList.remove('timer-active');
+        }
+
+        function playTimerBeep() {
+            try {
+                if (window.audioCtx) {
+                    const osc = window.audioCtx.createOscillator();
+                    const gain = window.audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(window.audioCtx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, window.audioCtx.currentTime); // A5
+                    gain.gain.setValueAtTime(0.3, window.audioCtx.currentTime);
+                    osc.start();
+                    osc.stop(window.audioCtx.currentTime + 0.5);
+                }
+            } catch(e) {}
+        }
+
+        // ==========================================
+        // EXPORT & PWA MODAL
+        // ==========================================
+        function openPwaModal() {
+            document.getElementById('pwa-modal').classList.remove('hidden');
+        }
+
+        function closePwaModal() {
+            document.getElementById('pwa-modal').classList.add('hidden');
+        }
+
+        function exportDataCSV() {
+            if (appState.logs.length === 0) {
+                alert('No workout logs to export.');
+                return;
+            }
+
+            let csv = 'Date,Routine,Exercise,Set,Weight,Reps,Unit\n';
+            appState.logs.forEach(log => {
+                const date = new Date(log.date).toISOString().split('T')[0];
+                log.exercises.forEach(ex => {
+                    ex.sets.forEach((s, idx) => {
+                        if (s.completed) {
+                            csv += `"${date}","${log.routineName}","${ex.name}",${idx + 1},${s.weight || 0},${s.reps || 0},"${log.unit || 'lbs'}"\n`;
+                        }
+                    });
+                });
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `IronLog_Workouts_${new Date().toISOString().split('T')[0]}.csv`);
+            a.click();
+        }
+
+        function exportDataJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState, null, 2));
+            const a = document.createElement('a');
+            a.setAttribute("href", dataStr);
+            a.setAttribute("download", `IronLog_Backup_${new Date().toISOString().split('T')[0]}.json`);
+            a.click();
+        }
+
+        function clearAllData() {
+            if (confirm('Are you sure you want to reset all workout data and logs?')) {
+                localStorage.removeItem('ironlog_state');
+                location.reload();
+            }
+        }
+    </script>
+</body>
+</html>
